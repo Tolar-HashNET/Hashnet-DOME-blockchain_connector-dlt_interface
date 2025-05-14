@@ -1,33 +1,52 @@
+import {type AbiEventFragment, ContractAbi} from "web3";
+import {AbiFunctionFragment} from "web3-types/src/eth_abi_types";
 export async function sleep (ms: number) {return new Promise((r) => setTimeout(r, ms))};
 
-/**
- * Returns the index of the first appearance of the element at the given index in the given sorted array
- * @param sortedArray the sorted array
- * @param knownIndexOfElement the index of the element
- * @returns the index of the first appearance of the element at the sorted array
- */
-export function getIndexOfFirstAppearanceOfElement(sortedArray: any[], knownIndexOfElement: number){
-  for (let i = 0; i <= knownIndexOfElement; i++) {
-    if(sortedArray[knownIndexOfElement - 1 - i] !== sortedArray[knownIndexOfElement - i]){
-        return knownIndexOfElement - i;
+export class DomeContract {
+  private _abi: ContractAbi;
+  private readonly _eventDOMEv1Abi: AbiEventFragment;
+  private readonly _emitMethodAbi: AbiFunctionFragment;
+  private static _instance: DomeContract | null = null;
+
+  private constructor() {
+    this._abi = JSON.parse(process.env.DOME_EVENTS_CONTRACT_ABI!) as ContractAbi;
+
+    const eventDOMEv1Abi = this._abi.find(
+        abiFragment => abiFragment.type === "event" &&
+            (abiFragment as AbiEventFragment).name === "EventDOMEv1"
+    );
+
+    if(eventDOMEv1Abi === undefined) {
+      throw new Error("Failed to extract ABI for eventDOMEv1");
     }
+
+    this._eventDOMEv1Abi = eventDOMEv1Abi as AbiEventFragment;
+
+    const emitMethodAbi = this._abi.find(
+        abiFragment => abiFragment.type === "function" &&
+            (abiFragment as AbiFunctionFragment).name === "emitNewEvent"
+    );
+
+    if(emitMethodAbi === undefined) {
+      throw new Error("Failed to extract ABI for emitNewEvent method");
+    }
+
+    this._emitMethodAbi = emitMethodAbi as AbiFunctionFragment;
   }
 
-  return knownIndexOfElement;
-}
-
-/**
- * Returns the index of the last appearance of the element at the given index in the given sorted array
- * @param sortedArray the sorted array
- * @param knownIndexOfElement the index of the element
- * @returns the index of the last appearance of the element at the sorted array
- */
-export function getIndexOfLastAppearanceOfElement(sortedArray: any[], knownIndexOfElement: number){
-  for (let i = 0; i <= knownIndexOfElement; i++) {
-    if(sortedArray[knownIndexOfElement + 1 + i] !== sortedArray[knownIndexOfElement + i]){
-        return knownIndexOfElement + i;
+  public static get instance() {
+    if (this._instance === null) {
+      this._instance = new DomeContract();
     }
+
+    return this._instance;
   }
 
-  return knownIndexOfElement;
+  get emitMethodAbi(): AbiFunctionFragment {
+    return this._emitMethodAbi;
+  }
+
+  get eventDOMEv1Abi(): AbiEventFragment {
+    return this._eventDOMEv1Abi;
+  }
 }

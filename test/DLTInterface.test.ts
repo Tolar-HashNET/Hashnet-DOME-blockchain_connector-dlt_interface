@@ -1,5 +1,4 @@
-const { connectToNode, subscribeToDOMEEvents, publishDOMEEvent } = require('../src/api/DLTInterface');
-const ethers = require('ethers');
+const { subscribeToDOMEEvents, publishDOMEEvent } = require('../src/api/DLTInterface');
 import dotenv from "dotenv";
 dotenv.config();
 import {describe, expect, it} from '@jest/globals'
@@ -8,7 +7,7 @@ import { Set } from "typescript";
 import { sleep } from "../src/utils/funcs";
 import { IllegalArgumentError } from "../src/exceptions/IllegalArgumentError";
 import { getActiveDOMEEventsByDate } from "../src/api/DLTInterface";
-import { DOMEEvent } from "../src/utils/types";
+import { DomeEvent } from "../src/utils/types";
 
 const rpcAddress = 'https://red-t.alastria.io/v0/9461d9f4292b41230527d57ee90652a6';
 const notificationEndpoint = undefined;
@@ -322,11 +321,11 @@ describe('DOME active events retrieval', () => {
 
     let allActiveEventsBetweenDates = await getActiveDOMEEventsByDate(initialTime.valueOf(), finTime.valueOf(), rpcAddress);
     let allActiveEventsBetweenDatesEntityIdHashes: string[] = [];
-    let allActiveEventsBetweenDatesWithDefinedEntityIdHash: DOMEEvent[] = [];
+    let allActiveEventsBetweenDatesWithDefinedEntityIdHash: DomeEvent[] = [];
     allActiveEventsBetweenDates.forEach(event => {
-      allActiveEventsBetweenDatesEntityIdHashes.push(event.entityId);
+      allActiveEventsBetweenDatesEntityIdHashes.push(event.entityIDHash);
 
-      if(event.entityId === previousStateEvent.entityIDHash){
+      if(event.entityIDHash === previousStateEvent.entityIDHash){
         allActiveEventsBetweenDatesWithDefinedEntityIdHash.push(event);
       }
     });
@@ -349,11 +348,11 @@ describe('DOME active events retrieval', () => {
     expect(timestampOfPublishedEvent).not.toBe(-1);
     let allActiveEventsBetweenDates = await getActiveDOMEEventsByDate(timestampOfPublishedEvent * 1000, timestampOfPublishedEvent * 1000, rpcAddress);
     let allActiveEventsBetweenDatesEntityIdHashes: string[] = [];
-    let allActiveEventsBetweenDatesWithDefinedEntityIdHash: DOMEEvent[] = [];
+    let allActiveEventsBetweenDatesWithDefinedEntityIdHash: DomeEvent[] = [];
     allActiveEventsBetweenDates.forEach(event => {
-      allActiveEventsBetweenDatesEntityIdHashes.push(event.entityId);
+      allActiveEventsBetweenDatesEntityIdHashes.push(event.entityIDHash);
 
-      if(event.entityId === previousStateEvent.entityIDHash){
+      if(event.entityIDHash === previousStateEvent.entityIDHash){
         allActiveEventsBetweenDatesWithDefinedEntityIdHash.push(event);
       }
     });
@@ -373,11 +372,11 @@ describe('DOME active events retrieval', () => {
     expect(timestampOfPublishedEvent).not.toBe(-1);
     let allActiveEventsBetweenDates = await getActiveDOMEEventsByDate(timestampOfPublishedEvent * 1000, timestampOfPublishedEvent * 1000, rpcAddress);
     let allActiveEventsBetweenDatesEntityIdHashes: string[] = [];
-    let allActiveEventsBetweenDatesWithDefinedEntityIdHash: DOMEEvent[] = [];
+    let allActiveEventsBetweenDatesWithDefinedEntityIdHash: DomeEvent[] = [];
     allActiveEventsBetweenDates.forEach(event => {
-      allActiveEventsBetweenDatesEntityIdHashes.push(event.entityId);
+      allActiveEventsBetweenDatesEntityIdHashes.push(event.entityIDHash);
 
-      if(event.entityId === previousStateEvent.entityIDHash){
+      if(event.entityIDHash === previousStateEvent.entityIDHash){
         allActiveEventsBetweenDatesWithDefinedEntityIdHash.push(event);
       }
     });
@@ -397,11 +396,11 @@ describe('DOME active events retrieval', () => {
     expect(timestampOfPublishedEvent).not.toBe(-1);
     let allActiveEventsBetweenDates = await getActiveDOMEEventsByDate((timestampOfPublishedEvent + 1) * 1000, (timestampOfPublishedEvent + 1) * 1000, rpcAddress);
     let allActiveEventsBetweenDatesEntityIdHashes: string[] = [];
-    let allActiveEventsBetweenDatesWithDefinedEntityIdHash: DOMEEvent[] = [];
+    let allActiveEventsBetweenDatesWithDefinedEntityIdHash: DomeEvent[] = [];
     allActiveEventsBetweenDates.forEach(event => {
-      allActiveEventsBetweenDatesEntityIdHashes.push(event.entityId);
+      allActiveEventsBetweenDatesEntityIdHashes.push(event.entityIDHash);
 
-      if(event.entityId === previousStateEvent.entityIDHash){
+      if(event.entityIDHash === previousStateEvent.entityIDHash){
         allActiveEventsBetweenDatesWithDefinedEntityIdHash.push(event);
       }
     });
@@ -421,11 +420,11 @@ describe('DOME active events retrieval', () => {
     expect(timestampOfPublishedEvent).not.toBe(-1);
     let allActiveEventsBetweenDates = await getActiveDOMEEventsByDate((timestampOfPublishedEvent - 1) * 1000, (timestampOfPublishedEvent - 1) * 1000, rpcAddress);
     let allActiveEventsBetweenDatesEntityIdHashes: string[] = [];
-    let allActiveEventsBetweenDatesWithDefinedEntityIdHash: DOMEEvent[] = [];
+    let allActiveEventsBetweenDatesWithDefinedEntityIdHash: DomeEvent[] = [];
     allActiveEventsBetweenDates.forEach(event => {
-      allActiveEventsBetweenDatesEntityIdHashes.push(event.entityId);
+      allActiveEventsBetweenDatesEntityIdHashes.push(event.entityIDHash);
 
-      if(event.entityId === previousStateEvent.entityIDHash){
+      if(event.entityIDHash === previousStateEvent.entityIDHash){
         allActiveEventsBetweenDatesWithDefinedEntityIdHash.push(event);
       }
     });

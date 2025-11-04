@@ -4,7 +4,7 @@
   "description": "DLT Interface component for DOME project",
   "main": "src/server.ts",
   "dependencies": {
-    "@tolar/web3-plugin-tolar": "^0.9.92",
+    "@tolar/web3-plugin-tolar": "^1.0.0",
     "@types/debug": "^4.1.8",
     "@types/express": "^4.17.13",
     "@types/jest": "^29.5.11",

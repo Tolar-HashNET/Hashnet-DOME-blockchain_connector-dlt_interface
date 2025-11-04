@@ -1,0 +1,68 @@
+name: Build & Push to AWS ECR (manual)
+
+on:
+  push:
+    branches: [ hashnet-integration ]
+  workflow_dispatch:    # samo ručni trigger (Run workflow gumb)
+
+env:
+  AWS_REGION: eu-central-1
+  ECR_REPOSITORY: dome-connector-dlt-interface
+
+jobs:
+  build_and_push_docker:
+    timeout-minutes: 60
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Declare commit SHA
+        id: var_commit_sha
+        run: |
+          echo "COMMIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
+
+      - name: Print branch info
+        run: |
+          echo "Building branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ env.COMMIT_SHA }}"
+          echo "Date: ${{ env.DATE }}"
+
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_NAME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Prepare Docker image tags
+        id: vars
+        run: |
+          ECR="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}"
+          echo "ECR_REGISTRY=${ECR}" >> $GITHUB_ENV
+          echo "IMAGE_TAG1=hashnet-integration" >> $GITHUB_ENV
+          echo "IMAGE_TAG2=${{ env.DATE }}-${{ env.COMMIT_SHA }}" >> $GITHUB_ENV
+          echo "Image tags will be: ${ECR}:hashnet-integration and ${ECR}:${{ env.DATE }}-${{ env.COMMIT_SHA }}"
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}:${{ env.IMAGE_TAG1 }}
+            ${{ env.ECR_REGISTRY }}:${{ env.IMAGE_TAG2 }}

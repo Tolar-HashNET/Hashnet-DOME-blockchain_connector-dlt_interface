@@ -1,6 +1,8 @@
 name: Build & Push to AWS ECR (manual)
 
 on:
+  push:
+    branches: [ hashnet-integration ]
   workflow_dispatch:    # samo ručni trigger (Run workflow gumb)
 
 env:

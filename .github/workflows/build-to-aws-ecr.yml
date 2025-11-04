@@ -27,7 +27,7 @@ jobs:
         id: var_commit_sha
         run: |
           echo "COMMIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          echo "DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
+          echo "DATE=$(date +%d-%m-%Y)" >> $GITHUB_ENV
 
       - name: Print branch info
         run: |

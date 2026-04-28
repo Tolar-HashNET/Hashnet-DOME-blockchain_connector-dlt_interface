@@ -40,11 +40,6 @@ if (process.env.PRIVATE_KEY === undefined || !validator.isHexString(process.env.
     throw new IllegalArgumentError("PRIVATE_KEY is missing or in invalid format");
 }
 
-if (process.env.HASHNET_NETWORK_ID === undefined ||
-    !validator.isUInt(process.env.HASHNET_NETWORK_ID)) {
-    throw new IllegalArgumentError("HASHNET_NETWORK_ID is missing or in invalid format");
-}
-
 const app = express()
 const port = 8080
 

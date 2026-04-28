@@ -1,5 +1,6 @@
 import {type AbiEventFragment, ContractAbi} from "web3";
 import {AbiFunctionFragment} from "web3-types/src/eth_abi_types";
+
 export async function sleep (ms: number) {return new Promise((r) => setTimeout(r, ms))};
 
 export class DomeContract {
@@ -49,4 +50,40 @@ export class DomeContract {
   get eventDOMEv1Abi(): AbiEventFragment {
     return this._eventDOMEv1Abi;
   }
+}
+
+export interface HashnetEnv {
+    rpcAddress: string;
+    networkId: number;
+    gasPrice: string;
+}
+
+const HASHNET_ENV: HashnetEnv | null = null;
+
+export function getHashnetEnv(): HashnetEnv {
+    if(HASHNET_ENV !== null) {
+        return HASHNET_ENV;
+    }
+
+    const rpcAddress = process.env.RPC_ADDRESS;
+    if (rpcAddress === undefined || rpcAddress === "") {
+        throw new Error("Hashnet RPC_ADDRESS is missing");
+    }
+
+    let networkId: number = 0;
+    let gasPrice: string =   "1";
+
+    if(rpcAddress.includes("mainnet")) {
+        networkId = 1;
+    } else if(rpcAddress.includes("testnet")) {
+        networkId = 2;
+    } else if(rpcAddress.includes("stagenet")) {
+        networkId = 3;
+    }
+
+    return {
+        rpcAddress: rpcAddress,
+        networkId: networkId,
+        gasPrice: gasPrice,
+    };
 }

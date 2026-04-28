@@ -14,6 +14,7 @@ import {HexString, Web3} from "web3";
 import {retryDecorator} from "ts-retry-promise";
 import {DomeContract} from "../utils/funcs";
 import {MAX_BLOCKS_PER_PULL} from "../subscriber/puller";
+import {getHashnetEnv} from "../utils/funcs";
 
 const debugLog = debug("DLT Interface Service: ");
 const errorLog = debug("DLT Interface Service:error ");
@@ -100,17 +101,17 @@ export async function publishDOMEEvent(
           relevantMetadata
     ]);
 
-    const networkId = web3.utils.toNumber(process.env.HASHNET_NETWORK_ID!) as number;
+    const hashnetEnv = getHashnetEnv();
 
     const contractTxRequest: RpcTxRequest = {
       senderAddress: senderAddress,
       receiverAddress: process.env.DOME_EVENTS_CONTRACT_ADDRESS!,
       amount: "0",
-      networkId: converters.toNetworkId(networkId),
+      networkId: converters.toNetworkId(hashnetEnv.networkId),
       nonce: "0",
       data: data,
       gas: "0",
-      gasPrice: "1",
+      gasPrice: hashnetEnv.gasPrice,
     };
 
     debugLog("  > Ethereum Remittent: ", iss);
@@ -127,7 +128,7 @@ export async function publishDOMEEvent(
       to: contractTxRequest.receiverAddress,
       value: contractTxRequest.amount,
       nonce: nonce,
-      networkId: networkId,
+      networkId: hashnetEnv.networkId,
       gas: gasEstimate,
       gasPrice: contractTxRequest.gasPrice,
       data: data

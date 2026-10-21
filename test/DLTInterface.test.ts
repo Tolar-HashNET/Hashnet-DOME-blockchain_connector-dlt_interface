@@ -1,476 +1,151 @@
-const { subscribeToDOMEEvents, publishDOMEEvent } = require('../src/api/DLTInterface');
-import dotenv from "dotenv";
-dotenv.config();
-import {describe, expect, it} from '@jest/globals'
-import { createHash, randomBytes } from "crypto";
-import { Set } from "typescript";
-import { sleep } from "../src/utils/funcs";
-import { IllegalArgumentError } from "../src/exceptions/IllegalArgumentError";
-import { getActiveDOMEEventsByDate } from "../src/api/DLTInterface";
-import { DomeEvent } from "../src/utils/types";
+import express from "express";
+import { Server } from "http";
+import { AddressInfo } from "net";
+import { Web3 } from "web3";
+import { proto } from "@tolar/web3-plugin-tolar";
+import {legacyAbi, authorAbi, contract, issuer, entity, previous, testKey} from "./fixtures/publish-config";
 
-const rpcAddress = 'https://red-t.alastria.io/v0/9461d9f4292b41230527d57ee90652a6';
-const notificationEndpoint = undefined;
-const ownIss = "0x61b27fef24cfe8a0b797ed8a36de2884f9963c0c2a0da640e3ec7ad6cd0c351e"
-const iss = "0x43b27fef24cfe8a0b797ed8a36de2884f9963c0c2a0da640e3ec7ad6cd0c493d";
+const request = require("supertest");
+const hash = "0x" + "ab".repeat(32);
+const web3 = new Web3();
+const savedEnv = {...process.env};
+let server: Server, rpc: string, app: express.Express;
+interface SubmittedTx {networkId: number; gasPrice: bigint; nonce: bigint; data: string;}
+let signed: SubmittedTx[] = [], calls: string[] = [];
+let confirmedNonce = 4, pendingReads = 0;
+let acceptedNonces = new Set<number>();
+let estimate = "120000", simulationReverts = false, txReverts = false;
+let timestamp = 1792535919;
 
-describe('DOME events subscription', () => {
-  let eventTypesOfInterest: string[];
-  let entityIdOne: string;
-  let entityIdTwo: string;
-  let entityIdThree: string; 
-
-  let correctEventTypeOne: any;
-  let correctEventTypeTwo: any;
-  let ownIssAsOriginEvent: any;
-
-  beforeAll(() => {
-    eventTypesOfInterest = ['eventType1', 'eventType2'];
+beforeAll(async () => {
+  const chain = express().use(express.json());
+  chain.post("/", (req, res) => {
+    const {id, method, params} = req.body;
+    calls.push(method);
+    let result: unknown;
+    switch (method) {
+      case "eth_chainId": result = "0x1"; break;
+      case "eth_gasPrice": result = "0x7"; break;
+      case "eth_getBlockByNumber": result = {gasLimit: "0x989680", timestamp: "0x6ad7ed6f", number: "0x17c9"}; break;
+      case "tol_getGasEstimate": result = estimate; break;
+      case "tol_tryCallTransaction": result = {excepted: simulationReverts, output: simulationReverts ? "526576657274496e737472756374696f6e" : "00".repeat(31) + "01"}; break;
+      case "tol_getNonce": result = confirmedNonce.toString(); break;
+      case "tol_getPastEvents": {
+        const event = legacyAbi[1] as any;
+        result = {past_events: [{address: contract.slice(2), topic: web3.eth.abi.encodeEventSignature(event).slice(2),
+          topic_arg_0: issuer.slice(2), topic_arg_1: entity.slice(2), topic_arg_2: previous.slice(2),
+          data: web3.eth.abi.encodeParameters(event.inputs.filter((input: any) => !input.indexed), ["42", "1792535919", "ProductUpdated", "https://test_marketplace/test?hl=0xabc123", ["sbx"]]).slice(2),
+          block_index: 2980959, transaction_hash: hash.slice(2), block_hash: hash.slice(2)}]};
+        break;
+      }
+      case "tx_sendSignedTransaction": {
+        const body = proto.SignedTransaction.fromBinary(web3.utils.hexToBytes("0x" + params[0])).body!;
+        const uint = (bytes: Uint8Array) => BigInt("0x" + (Buffer.from(bytes).toString("hex") || "0"));
+        const nonce = Number(uint(body.nonce));
+        if (acceptedNonces.has(nonce)) {res.json({jsonrpc: "2.0", id, error: {code: -32000, message: "transaction already pending"}}); return;}
+        acceptedNonces.add(nonce);
+        signed.push({networkId: Number(body.networkId), gasPrice: uint(body.gasPrice), nonce: uint(body.nonce), data: web3.utils.bytesToHex(body.data)});
+        result = hash.slice(2); break;
+      }
+      case "tol_getTransaction":
+        if (pendingReads-- > 0) {result = {}; break;}
+        confirmedNonce = Number(signed[signed.length - 1].nonce) + 1;
+        result = {
+        transaction_hash: hash.slice(2), block_hash: hash.slice(2), transaction_index: 0,
+        sender_address: "54" + "11".repeat(24), receiver_address: contract.slice(2),
+        value: "0", gas: estimate, gas_price: "7", data: "", nonce: "4", network_id: 1,
+        confirmation_timestamp: timestamp, gas_used: "100000", gas_refunded: "20000",
+        new_address: "", output: "", excepted: txReverts, exception: txReverts ? 1 : 0
+      }; break;
+      default: res.json({jsonrpc: "2.0", id, error: {code: -32601, message: "Unexpected RPC: " + method}}); return;
+    }
+    res.json({jsonrpc: "2.0", id, result});
   });
-
-  beforeEach(() => {
-    entityIdOne = randomBytes(20).toString('hex');
-    entityIdTwo= randomBytes(20).toString('hex');
-    entityIdThree = randomBytes(20).toString('hex');
-
-    correctEventTypeOne = {
-      origin: iss,
-      entityIDHash: "0x" + createHash('sha256').update(entityIdOne).digest('hex'),
-      previousEntityHash: "0x743c956500000000001000000070000000600000000000300000000050000000",
-      eventType: 'eventType1',
-      dataLocation: 'dataLocation1',
-      metadata: [],
-    };
-
-    correctEventTypeTwo = {
-      origin: iss,
-      entityIDHash: "0x" + createHash('sha256').update(entityIdTwo).digest('hex'),
-      previousEntityHash: "0x843c956500000000001000000070000000600000000000300000000050000000",
-      eventType: 'eventType2',
-      dataLocation: correctEventTypeOne.dataLocation,
-      metadata: [],
-    };
-
-    ownIssAsOriginEvent = {
-      origin: ownIss,
-      entityIDHash: "0x" + createHash('sha256').update(entityIdThree).digest('hex'),
-      previousEntityHash: correctEventTypeTwo.previousEntityHash,
-      eventType: correctEventTypeTwo.eventType,
-      dataLocation: correctEventTypeOne.dataLocation,
-      metadata: [],
-    };
-  });
-
-  it('valid case: should subscribe to DOME events', async () => {
-
-    let entityIDHashesOfReceivedEvents = new Set<string>();
-    subscribeToDOMEEvents(eventTypesOfInterest, rpcAddress, ownIss, notificationEndpoint, (event: any) => {eventSubscriptionValidCaseDOMEEventsHandler(event, eventTypesOfInterest, ownIss, entityIDHashesOfReceivedEvents)});
-    await publishDOMEEvent(correctEventTypeOne.eventType, correctEventTypeOne.dataLocation, correctEventTypeOne.metadata, iss, correctEventTypeOne.entityIDHash, correctEventTypeOne.previousEntityHash, rpcAddress);
-    await publishDOMEEvent(correctEventTypeTwo.eventType, correctEventTypeTwo.dataLocation, correctEventTypeTwo.metadata, iss, correctEventTypeTwo.entityIDHash, correctEventTypeTwo.previousEntityHash, rpcAddress);
-    await publishDOMEEvent(correctEventTypeTwo.eventType, correctEventTypeTwo.dataLocation, correctEventTypeTwo.metadata, ownIssAsOriginEvent.origin, ownIssAsOriginEvent.entityIDHash, correctEventTypeTwo.previousEntityHash, rpcAddress);
-    await sleep(10000);
-
-    expect(entityIDHashesOfReceivedEvents).toContain(correctEventTypeOne.entityIDHash);
-    expect(entityIDHashesOfReceivedEvents).toContain(correctEventTypeTwo.entityIDHash);
-    expect(entityIDHashesOfReceivedEvents).not.toContain(ownIssAsOriginEvent.entityIDHash);
-  }, 80000);
-
-  it('invalid case: no event types selected', async () => {
-    let entityIDHashesOfReceivedEvents = new Set<string>();
-    expect(() => subscribeToDOMEEvents([], rpcAddress, ownIss, notificationEndpoint, (event: any) => {eventSubscriptionValidCaseDOMEEventsHandler(event, eventTypesOfInterest, ownIss, entityIDHashesOfReceivedEvents)})).toThrowError(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: blank event types selected', async () => {
-    let entityIDHashesOfReceivedEvents = new Set<string>();
-    expect(() => subscribeToDOMEEvents(["a", "", "u"], rpcAddress, ownIss, notificationEndpoint, (event: any) => {eventSubscriptionValidCaseDOMEEventsHandler(event, eventTypesOfInterest, ownIss, entityIDHashesOfReceivedEvents)})).toThrowError(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: undefined event types', async () => {
-    let entityIDHashesOfReceivedEvents = new Set<string>();
-    expect(() => subscribeToDOMEEvents(undefined, rpcAddress, ownIss, notificationEndpoint, (event: any) => {eventSubscriptionValidCaseDOMEEventsHandler(event, eventTypesOfInterest, ownIss, entityIDHashesOfReceivedEvents)})).toThrowError(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: null event types', async () => {
-    let entityIDHashesOfReceivedEvents = new Set<string>();
-    expect(() => subscribeToDOMEEvents(null, rpcAddress, ownIss, notificationEndpoint, (event: any) => {eventSubscriptionValidCaseDOMEEventsHandler(event, eventTypesOfInterest, ownIss, entityIDHashesOfReceivedEvents)})).toThrowError(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: undefined rpcAddress', async () => {
-    let entityIDHashesOfReceivedEvents = new Set<string>();
-    expect(() => subscribeToDOMEEvents(eventTypesOfInterest, undefined, ownIss, notificationEndpoint, (event: any) => {eventSubscriptionValidCaseDOMEEventsHandler(event, eventTypesOfInterest, ownIss, entityIDHashesOfReceivedEvents)})).toThrowError(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: null rpcAddress', async () => {
-    let entityIDHashesOfReceivedEvents = new Set<string>();
-    expect(() => subscribeToDOMEEvents(eventTypesOfInterest, null, ownIss, notificationEndpoint, (event: any) => {eventSubscriptionValidCaseDOMEEventsHandler(event, eventTypesOfInterest, ownIss, entityIDHashesOfReceivedEvents)})).toThrowError(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: blank ownIss', async () => {
-    let entityIDHashesOfReceivedEvents = new Set<string>();
-    expect(() => subscribeToDOMEEvents(eventTypesOfInterest, rpcAddress, "", notificationEndpoint, (event: any) => {eventSubscriptionValidCaseDOMEEventsHandler(event, eventTypesOfInterest, ownIss, entityIDHashesOfReceivedEvents)})).toThrowError(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: undefined ownIss', async () => {
-    let entityIDHashesOfReceivedEvents = new Set<string>();
-    expect(() => subscribeToDOMEEvents(eventTypesOfInterest, rpcAddress, undefined, notificationEndpoint, (event: any) => {eventSubscriptionValidCaseDOMEEventsHandler(event, eventTypesOfInterest, ownIss, entityIDHashesOfReceivedEvents)})).toThrowError(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: null ownIss', async () => {
-    let entityIDHashesOfReceivedEvents = new Set<string>();
-    expect(() => subscribeToDOMEEvents(eventTypesOfInterest, rpcAddress, null, notificationEndpoint, (event: any) => {eventSubscriptionValidCaseDOMEEventsHandler(event, eventTypesOfInterest, ownIss, entityIDHashesOfReceivedEvents)})).toThrowError(IllegalArgumentError);
-  }, 30000);
-
+  server = await new Promise<Server>(resolve => {const s = chain.listen(0, "127.0.0.1", () => resolve(s));});
+  rpc = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
-
-describe('DOME events publication', () => {
-  let eventTypesOfInterest: string[];
-  let entityIdOne;
-  let correctEventTypeOne: any;
-
-  beforeAll(() => {
-    eventTypesOfInterest = ['eventType1', 'eventType2'];
-  })
-
-  beforeEach(() => {
-    entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne = {
-      origin: iss,
-      entityIDHash: "0x" + createHash('sha256').update(entityIdOne).digest('hex'),
-      previousEntityHash: "0x743c956500000000001000000070000000600000000000300000000050000000",
-      eventType: 'eventType1',
-      dataLocation: 'dataLocation1',
-      metadata: [],
-    };
-  });
-
-  it('valid case: publishes a DOME event to the blockchain', async () => {
-    const entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne.entityIDHash = "0x" + createHash('sha256').update(entityIdOne).digest('hex');
-    
-    let entityIDHashesOfReceivedEvents = new Set<string>();
-    subscribeToDOMEEvents(eventTypesOfInterest, rpcAddress, ownIss, notificationEndpoint, (event: any) => {eventPublicationValidCaseDOMEEventsHandler(event, entityIDHashesOfReceivedEvents)});
-    await publishDOMEEvent(correctEventTypeOne.eventType, correctEventTypeOne.dataLocation, correctEventTypeOne.metadata, iss, correctEventTypeOne.entityIDHash, correctEventTypeOne.previousEntityHash, rpcAddress);
-    await sleep(20000);
-
-    expect(entityIDHashesOfReceivedEvents).toContain(correctEventTypeOne.entityIDHash);
-  }, 60000);
-
-  it('invalid case: blank eventType', async () => {
-    const entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne.entityIDHash = "0x" + createHash('sha256').update(entityIdOne).digest('hex');
-
-    await expect(publishDOMEEvent("", correctEventTypeOne.dataLocation, correctEventTypeOne.metadata, iss, correctEventTypeOne.entityIDHash, correctEventTypeOne.previousEntityHash, rpcAddress)).rejects.toThrow(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: undefined eventType', async () => {
-    const entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne.entityIDHash = "0x" + createHash('sha256').update(entityIdOne).digest('hex');
-
-    await expect(publishDOMEEvent(undefined, correctEventTypeOne.dataLocation, correctEventTypeOne.metadata, iss, correctEventTypeOne.entityIDHash, correctEventTypeOne.previousEntityHash, rpcAddress)).rejects.toThrow(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: null eventType', async () => {
-    const entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne.entityIDHash = "0x" + createHash('sha256').update(entityIdOne).digest('hex');
-
-    await expect(publishDOMEEvent(null, correctEventTypeOne.dataLocation, correctEventTypeOne.metadata, iss, correctEventTypeOne.entityIDHash, correctEventTypeOne.previousEntityHash, rpcAddress)).rejects.toThrow(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: blank datalocation', async () => {
-    const entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne.entityIDHash = "0x" + createHash('sha256').update(entityIdOne).digest('hex');
-
-    await expect(publishDOMEEvent(correctEventTypeOne.eventType, "", correctEventTypeOne.metadata, iss, correctEventTypeOne.entityIDHash, correctEventTypeOne.previousEntityHash, rpcAddress)).rejects.toThrow(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: undefined datalocation', async () => {
-    const entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne.entityIDHash = "0x" + createHash('sha256').update(entityIdOne).digest('hex');
-
-    await expect(publishDOMEEvent(correctEventTypeOne.eventType, undefined, correctEventTypeOne.metadata, iss, correctEventTypeOne.entityIDHash, correctEventTypeOne.previousEntityHash, rpcAddress)).rejects.toThrow(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: null datalocation', async () => {
-    const entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne.entityIDHash = "0x" + createHash('sha256').update(entityIdOne).digest('hex');
-
-    await expect(publishDOMEEvent(correctEventTypeOne.eventType, null, correctEventTypeOne.metadata, iss, correctEventTypeOne.entityIDHash, correctEventTypeOne.previousEntityHash, rpcAddress)).rejects.toThrow(IllegalArgumentError);
-  }, 30000);
-
-
-  it('invalid case: blank iss', async () => {
-    const entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne.entityIDHash = "0x" + createHash('sha256').update(entityIdOne).digest('hex');
-
-    await expect(publishDOMEEvent(correctEventTypeOne.eventType, correctEventTypeOne.iss, correctEventTypeOne.metadata, "", correctEventTypeOne.entityIDHash, correctEventTypeOne.previousEntityHash, rpcAddress)).rejects.toThrow(IllegalArgumentError);
-  }, 30000);
-
-  
-  it('invalid case: undefined iss', async () => {
-    const entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne.entityIDHash = "0x" + createHash('sha256').update(entityIdOne).digest('hex');
-
-    await expect(publishDOMEEvent(correctEventTypeOne.eventType, correctEventTypeOne.iss, correctEventTypeOne.metadata, undefined, correctEventTypeOne.entityIDHash, correctEventTypeOne.previousEntityHash, rpcAddress)).rejects.toThrow(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: null iss', async () => {
-    const entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne.entityIDHash = "0x" + createHash('sha256').update(entityIdOne).digest('hex');
-
-    await expect(publishDOMEEvent(correctEventTypeOne.eventType, correctEventTypeOne.iss, correctEventTypeOne.metadata, null, correctEventTypeOne.entityIDHash, correctEventTypeOne.previousEntityHash, rpcAddress)).rejects.toThrow(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: blank entityIdHash', async () => {
-    const entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne.entityIDHash = "0x" + createHash('sha256').update(entityIdOne).digest('hex');
-
-    await expect(publishDOMEEvent(correctEventTypeOne.eventType, correctEventTypeOne.iss, correctEventTypeOne.metadata, iss, "", correctEventTypeOne.previousEntityHash, rpcAddress)).rejects.toThrow(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: undefined entityIdHash', async () => {
-    const entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne.entityIDHash = "0x" + createHash('sha256').update(entityIdOne).digest('hex');
-
-    await expect(publishDOMEEvent(correctEventTypeOne.eventType, correctEventTypeOne.iss, correctEventTypeOne.metadata, iss, undefined, correctEventTypeOne.previousEntityHash, rpcAddress)).rejects.toThrow(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: null entityIdHash', async () => {
-    const entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne.entityIDHash = "0x" + createHash('sha256').update(entityIdOne).digest('hex');
-
-    await expect(publishDOMEEvent(correctEventTypeOne.eventType, correctEventTypeOne.iss, correctEventTypeOne.metadata, iss, null, correctEventTypeOne.previousEntityHash, rpcAddress)).rejects.toThrow(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: undefined previousEntityHash', async () => {
-    const entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne.entityIDHash = "0x" + createHash('sha256').update(entityIdOne).digest('hex');
-
-    await expect(publishDOMEEvent(correctEventTypeOne.eventType, correctEventTypeOne.iss, correctEventTypeOne.metadata, iss, correctEventTypeOne.entityIdHash, undefined, rpcAddress)).rejects.toThrow(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: null previousEntityHash', async () => {
-    const entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne.entityIDHash = "0x" + createHash('sha256').update(entityIdOne).digest('hex');
-
-    await expect(publishDOMEEvent(correctEventTypeOne.eventType, correctEventTypeOne.iss, correctEventTypeOne.metadata, iss, correctEventTypeOne.entityIdHash, null, rpcAddress)).rejects.toThrow(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: blank rpcAddress', async () => {
-    const entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne.entityIDHash = "0x" + createHash('sha256').update(entityIdOne).digest('hex');
-
-    await expect(publishDOMEEvent(correctEventTypeOne.eventType, correctEventTypeOne.iss, correctEventTypeOne.metadata, iss, correctEventTypeOne.entityIdHash, "", "")).rejects.toThrow(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: undefined rpcAddress', async () => {
-    const entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne.entityIDHash = "0x" + createHash('sha256').update(entityIdOne).digest('hex');
-
-    await expect(publishDOMEEvent(correctEventTypeOne.eventType, correctEventTypeOne.iss, correctEventTypeOne.metadata, iss, correctEventTypeOne.entityIdHash, "", undefined)).rejects.toThrow(IllegalArgumentError);
-  }, 30000);
-
-  it('invalid case: null rpcAddress', async () => {
-    const entityIdOne = randomBytes(20).toString('hex');
-    correctEventTypeOne.entityIDHash = "0x" + createHash('sha256').update(entityIdOne).digest('hex');
-
-    await expect(publishDOMEEvent(correctEventTypeOne.eventType, correctEventTypeOne.iss, correctEventTypeOne.metadata, iss, correctEventTypeOne.entityIdHash, "", null)).rejects.toThrow(IllegalArgumentError);
-  }, 30000);
-
-
+beforeEach(() => {
+  process.env = {...savedEnv, PRIVATE_KEY: testKey, RPC_ADDRESS: rpc, ISS: issuer,
+    DOME_EVENTS_CONTRACT_ADDRESS: contract, DOME_EVENTS_CONTRACT_ABI: JSON.stringify(legacyAbi), DOME_PRODUCTION_BLOCK_NUMBER: "0"};
+  signed = []; calls = []; estimate = "120000"; simulationReverts = false; txReverts = false; timestamp = 1792535919;
+  confirmedNonce = 4; pendingReads = 0; acceptedNonces = new Set();
+  jest.resetModules();
+  app = express().use(express.json()).use(require("../src/routes/routes"));
 });
+afterAll(async () => {process.env = savedEnv; await new Promise<void>((resolve, reject) => server.close(e => e ? reject(e) : resolve()));});
+const body = () => ({eventType: "ProductUpdated", dataLocation: "https://test_marketplace/test?hl=0xabc123",
+  entityId: entity, previousEntityHash: previous, relevantMetadata: ["sbx"]});
 
-describe('DOME active events retrieval', () => {
-  let entityIdOne; 
-  let entityIdTwo;
-  let previousStateEvent: any;
-  let activeStateEvent: any;
-  let anotherEvent: any;
-
-  let eventTypesOfInterest: string[];
-  beforeAll(() => {
-    eventTypesOfInterest = ['eventType1', 'eventType2', 'eventType3'];
-  })
-
-  beforeEach(() => {
-    entityIdOne = randomBytes(20).toString('hex');
-    previousStateEvent = {
-        origin: iss,
-        entityIDHash: "0x" + createHash('sha256').update(entityIdOne).digest('hex'),
-        previousEntityHash: "0x743c956500000000001000000070000000600000000000300000000050000000",
-        eventType: 'eventType1',
-        dataLocation: 'dataLocation1',
-        metadata: [],
-    };
-
-    activeStateEvent= {
-        origin: iss,
-        entityIDHash: previousStateEvent.entityIDHash,
-        previousEntityHash: previousStateEvent.previousEntityHash,
-        eventType: 'eventType2',
-        dataLocation: previousStateEvent.dataLocation,
-        metadata: previousStateEvent.metadata 
-    };
-  });
-
-  it('valid case: retrieved events are constrained for the given timeframe and are active events', async () => {
-    let initialTime = new Date();
-    await publishDOMEEvent(previousStateEvent.eventType, previousStateEvent.dataLocation, previousStateEvent.metadata, iss, previousStateEvent.entityIDHash, previousStateEvent.previousEntityHash, rpcAddress);
-    let eventPublicationTimestampSeconds = await publishDOMEEvent(activeStateEvent.eventType, activeStateEvent.dataLocation, activeStateEvent.metadata, iss, activeStateEvent.entityIDHash, activeStateEvent.previousEntityHash, rpcAddress);
-    let finTime = new Date(eventPublicationTimestampSeconds * 1000);
-    await publishDOMEEvent("eventType3", previousStateEvent.dataLocation, previousStateEvent.metadata, iss, previousStateEvent.entityIDHash, previousStateEvent.previousEntityHash, rpcAddress);
-
-    let allActiveEventsBetweenDates = await getActiveDOMEEventsByDate(initialTime.valueOf(), finTime.valueOf(), rpcAddress);
-    let allActiveEventsBetweenDatesEntityIdHashes: string[] = [];
-    let allActiveEventsBetweenDatesWithDefinedEntityIdHash: DomeEvent[] = [];
-    allActiveEventsBetweenDates.forEach(event => {
-      allActiveEventsBetweenDatesEntityIdHashes.push(event.entityIDHash);
-
-      if(event.entityIDHash === previousStateEvent.entityIDHash){
-        allActiveEventsBetweenDatesWithDefinedEntityIdHash.push(event);
-      }
-    });
-
-    expect(allActiveEventsBetweenDatesEntityIdHashes).toContain(previousStateEvent.entityIDHash);
-    expect(allActiveEventsBetweenDatesWithDefinedEntityIdHash.length).toBe(1);
-    expect(allActiveEventsBetweenDatesWithDefinedEntityIdHash[0].eventType).toBe(activeStateEvent.eventType);
-  }, 600000);
-
-  it('valid case: active event in lower boundary IS included', async () => {
-    let timestampOfPublishedEvent: number = -1; 
-    subscribeToDOMEEvents(eventTypesOfInterest, rpcAddress, ownIss, notificationEndpoint, (event: any) => {
-      if(event.entityIDHash === previousStateEvent.entityIDHash){
-        timestampOfPublishedEvent = event.timestamp;
-      }
-    });
-    await publishDOMEEvent(previousStateEvent.eventType, previousStateEvent.dataLocation, previousStateEvent.metadata, iss, previousStateEvent.entityIDHash, previousStateEvent.previousEntityHash, rpcAddress);
-    await sleep(20000);
-
-    expect(timestampOfPublishedEvent).not.toBe(-1);
-    let allActiveEventsBetweenDates = await getActiveDOMEEventsByDate(timestampOfPublishedEvent * 1000, timestampOfPublishedEvent * 1000, rpcAddress);
-    let allActiveEventsBetweenDatesEntityIdHashes: string[] = [];
-    let allActiveEventsBetweenDatesWithDefinedEntityIdHash: DomeEvent[] = [];
-    allActiveEventsBetweenDates.forEach(event => {
-      allActiveEventsBetweenDatesEntityIdHashes.push(event.entityIDHash);
-
-      if(event.entityIDHash === previousStateEvent.entityIDHash){
-        allActiveEventsBetweenDatesWithDefinedEntityIdHash.push(event);
-      }
-    });
-    expect(allActiveEventsBetweenDatesWithDefinedEntityIdHash.length).toBe(1);
-  }, 60000);
-
-  it('valid case: active event in upper boundary IS included', async () => {
-    let timestampOfPublishedEvent: number = -1; 
-    subscribeToDOMEEvents(eventTypesOfInterest, rpcAddress, ownIss, notificationEndpoint, (event: any) => {
-      if(event.entityIDHash === previousStateEvent.entityIDHash){
-        timestampOfPublishedEvent = event.timestamp;
-      }
-    });
-    await publishDOMEEvent(previousStateEvent.eventType, previousStateEvent.dataLocation, previousStateEvent.metadata, iss, previousStateEvent.entityIDHash, previousStateEvent.previousEntityHash, rpcAddress);
-    await sleep(20000);
-
-    expect(timestampOfPublishedEvent).not.toBe(-1);
-    let allActiveEventsBetweenDates = await getActiveDOMEEventsByDate(timestampOfPublishedEvent * 1000, timestampOfPublishedEvent * 1000, rpcAddress);
-    let allActiveEventsBetweenDatesEntityIdHashes: string[] = [];
-    let allActiveEventsBetweenDatesWithDefinedEntityIdHash: DomeEvent[] = [];
-    allActiveEventsBetweenDates.forEach(event => {
-      allActiveEventsBetweenDatesEntityIdHashes.push(event.entityIDHash);
-
-      if(event.entityIDHash === previousStateEvent.entityIDHash){
-        allActiveEventsBetweenDatesWithDefinedEntityIdHash.push(event);
-      }
-    });
-    expect(allActiveEventsBetweenDatesWithDefinedEntityIdHash.length).toBe(1);
-  }, 60000);
-
-  it('valid case: active event out of lower boundary IS NOT included', async () => {
-    let timestampOfPublishedEvent: number = -1; 
-    subscribeToDOMEEvents(eventTypesOfInterest, rpcAddress, ownIss, notificationEndpoint, (event: any) => {
-      if(event.entityIDHash === previousStateEvent.entityIDHash){
-        timestampOfPublishedEvent = event.timestamp;
-      }
-    });
-    await publishDOMEEvent(previousStateEvent.eventType, previousStateEvent.dataLocation, previousStateEvent.metadata, iss, previousStateEvent.entityIDHash, previousStateEvent.previousEntityHash, rpcAddress);
-    await sleep(20000);
-
-    expect(timestampOfPublishedEvent).not.toBe(-1);
-    let allActiveEventsBetweenDates = await getActiveDOMEEventsByDate((timestampOfPublishedEvent + 1) * 1000, (timestampOfPublishedEvent + 1) * 1000, rpcAddress);
-    let allActiveEventsBetweenDatesEntityIdHashes: string[] = [];
-    let allActiveEventsBetweenDatesWithDefinedEntityIdHash: DomeEvent[] = [];
-    allActiveEventsBetweenDates.forEach(event => {
-      allActiveEventsBetweenDatesEntityIdHashes.push(event.entityIDHash);
-
-      if(event.entityIDHash === previousStateEvent.entityIDHash){
-        allActiveEventsBetweenDatesWithDefinedEntityIdHash.push(event);
-      }
-    });
-    expect(allActiveEventsBetweenDatesWithDefinedEntityIdHash.length).toBe(0);
-  }, 60000);
-
-  it('valid case: active event out of upper boundary IS NOT included', async () => {
-    let timestampOfPublishedEvent: number = -1; 
-    subscribeToDOMEEvents(eventTypesOfInterest, rpcAddress, ownIss, notificationEndpoint, (event: any) => {
-      if(event.entityIDHash === previousStateEvent.entityIDHash){
-        timestampOfPublishedEvent = event.timestamp;
-      }
-    });
-    await publishDOMEEvent(previousStateEvent.eventType, previousStateEvent.dataLocation, previousStateEvent.metadata, iss, previousStateEvent.entityIDHash, previousStateEvent.previousEntityHash, rpcAddress);
-    await sleep(20000);
-
-    expect(timestampOfPublishedEvent).not.toBe(-1);
-    let allActiveEventsBetweenDates = await getActiveDOMEEventsByDate((timestampOfPublishedEvent - 1) * 1000, (timestampOfPublishedEvent - 1) * 1000, rpcAddress);
-    let allActiveEventsBetweenDatesEntityIdHashes: string[] = [];
-    let allActiveEventsBetweenDatesWithDefinedEntityIdHash: DomeEvent[] = [];
-    allActiveEventsBetweenDates.forEach(event => {
-      allActiveEventsBetweenDatesEntityIdHashes.push(event.entityIDHash);
-
-      if(event.entityIDHash === previousStateEvent.entityIDHash){
-        allActiveEventsBetweenDatesWithDefinedEntityIdHash.push(event);
-      }
-    });
-    expect(allActiveEventsBetweenDatesWithDefinedEntityIdHash.length).toBe(0);
-  }, 60000);
-
-  it('invalid case: start date is later than the end date', async () => {
-    let initialTime = new Date();
-    let finTime = new Date();
-    finTime.setFullYear(initialTime.getFullYear() + 1);
-
-    await expect(getActiveDOMEEventsByDate(finTime.valueOf(), initialTime.valueOf(), rpcAddress)).rejects.toThrow(IllegalArgumentError);
-  }, 60000);
-
-  it('invalid case: rpcAddress is blank', async () => {
-    let initialTime = new Date();
-    let finTime = new Date();
-    finTime.setFullYear(initialTime.getFullYear() + 1);
-
-    await expect(getActiveDOMEEventsByDate(initialTime.valueOf(), finTime.valueOf(), "")).rejects.toThrow(IllegalArgumentError);
-  }, 60000);
-
+test("QA health and subscription retain documented response bodies and statuses", async () => {
+  expect((await request(app).get("/health")).body).toEqual({status: "UP", checks: [{name: "DLT Adapter health check", status: "UP"}]});
+  const response = await request(app).post("/api/v1/subscribe").send({eventTypes: ["ProductAdded", "ProductUpdated"], notificationEndpoint: "http://127.0.0.1:8916/adapter_listener"});
+  expect(response.status).toBe(201); expect(response.text).toBe("OK");
 });
-
-
-
-/**
- * Event handler for DOME events that tests that the events received are to be received.
- *
- * @param event the DOME event to be handled.
- * @param eventTypesOfInterest the DOME event types to be received.
- * @param ownIss the identifier of the entity expected to be processing the events.
- * @param entityIDHashesOfReceivedEvents the entityIDHashes of the events already handled by this handler.
- */
-function eventSubscriptionValidCaseDOMEEventsHandler(event: any, eventTypesOfInterest: string[], ownIss: string, entityIDHashesOfReceivedEvents: Set<string>){
-  entityIDHashesOfReceivedEvents.add(event.entityIDHash);
-  expect(event.iss).not.toBe(ownIss);
-  expect(eventTypesOfInterest).toContain(event.eventType);
-}
-
-/**
- * Event handler for DOME events that tests that the events received are to be received.
- *
- * @param event the DOME event to be handled.
- * @param entityIDHashesOfReceivedEvents the entityIDHashes of the events already handled by this handler.
- */
-function eventPublicationValidCaseDOMEEventsHandler(event: any, entityIDHashesOfReceivedEvents: Set<string>){
-  entityIDHashesOfReceivedEvents.add(event.entityIDHash);
-}
+test("signed publish uses RPC chain ID, current gas price, nonce and unchanged entity hash", async () => {
+  const response = await request(app).post("/api/v1/publishEvent").send(body());
+  expect(response.status).toBe(201);
+  expect(response.body).toBe("2026-10-20T22:38:39.000Z");
+  expect(signed).toHaveLength(1);
+  const tx = signed[0];
+  expect(tx.networkId).toBe(1); expect(tx.gasPrice.toString()).toBe("7"); expect(tx.nonce.toString()).toBe("4");
+  const args = web3.eth.abi.decodeParameters((legacyAbi[0] as any).inputs, "0x" + tx.data.slice(10));
+  expect(args[0]).toBe(issuer); expect(args[1]).toBe(entity); expect(args[2]).toBe(previous); expect(args[5]).toEqual(["sbx"]);
+  expect(calls).toContain("tol_tryCallTransaction");
+});
+test("seven-argument contract ABI receives the signing account's EVM author address", async () => {
+  process.env.DOME_EVENTS_CONTRACT_ABI = JSON.stringify(authorAbi);
+  const response = await request(app).post("/api/v1/publishEvent").send(body());
+  expect(response.status).toBe(201); expect(signed).toHaveLength(1);
+  const args = web3.eth.abi.decodeParameters((authorAbi[0] as any).inputs, "0x" + signed[0].data.slice(10));
+  expect((args[1] as string).toLowerCase()).toBe("0x7e5f4552091a69125d5dfcb7b8c2659029395bdf"); expect(args[2]).toBe(entity);
+});
+test("legacy millisecond confirmation timestamp remains supported", async () => {
+  timestamp = 1792535919000;
+  const response = await request(app).post("/api/v1/publishEvent").send(body());
+  expect(response.status).toBe(201); expect(response.body).toBe("2026-10-20T22:38:39.000Z");
+});
+test("reverting preflight does not broadcast or spend fees", async () => {
+  simulationReverts = true;
+  expect((await request(app).post("/api/v1/publishEvent").send(body())).status).toBe(400); expect(signed).toHaveLength(0);
+});
+test("zero gas estimate is rejected before signing", async () => {
+  estimate = "0";
+  expect((await request(app).post("/api/v1/publishEvent").send(body())).status).toBe(400); expect(signed).toHaveLength(0);
+});
+test("reverted confirmed transaction cannot be reported as published", async () => {
+  txReverts = true;
+  expect((await request(app).post("/api/v1/publishEvent").send(body())).status).toBe(400);
+});
+test("pending empty V2 transaction response is retried until confirmation", async () => {
+  pendingReads = 1;
+  const response = await request(app).post("/api/v1/publishEvent").send(body());
+  expect(response.status).toBe(201);
+  expect(response.body).toBe("2026-10-20T22:38:39.000Z");
+  expect(calls.filter(method => method === "tol_getTransaction")).toHaveLength(2);
+  expect(signed).toHaveLength(1);
+}, 10000);
+test("simultaneous publications use distinct confirmed nonces", async () => {
+  const responses = await Promise.all([request(app).post("/api/v1/publishEvent").send(body()), request(app).post("/api/v1/publishEvent").send(body())]);
+  expect(responses.map(response => response.status)).toEqual([201, 201]);
+  expect(signed.map(tx => tx.nonce.toString())).toEqual(["4", "5"]);
+});
+test("QA date retrieval includes matching V2 events and does not scan three million empty blocks", async () => {
+  const response = await request(app).get("/api/v1/events").query({startDate: "0", endDate: "1792535920000"});
+  expect(response.status).toBe(200);
+  expect(response.body).toEqual([{id: 42, publisherAddress: issuer, entityIDHash: entity, previousEntityHash: previous,
+    eventType: "ProductUpdated", timestamp: 1792535919000, dataLocation: "https://test_marketplace/test?hl=0xabc123", relevantMetadata: ["sbx"]}]);
+  expect(calls).toEqual(["tol_getPastEvents"]);
+});
+test.each(["eventType", "dataLocation", "entityId", "previousEntityHash", "relevantMetadata"])("invalid publish %s is rejected before RPC", async key => {
+  const invalid: any = body(); invalid[key] = null;
+  expect((await request(app).post("/api/v1/publishEvent").send(invalid)).status).toBe(400); expect(calls).toHaveLength(0);
+});
+test.each([undefined, "", "not-a-number", "-1", "1.5"])("invalid date %p is rejected before RPC", async startDate => {
+  expect((await request(app).get("/api/v1/events").query({startDate, endDate: "1792535919000"})).status).toBe(400); expect(calls).toHaveLength(0);
+});
+test.each([null, "ProductUpdated", [], [""]])("invalid eventTypes %p rejected", async eventTypes => {
+  expect((await request(app).post("/api/v1/subscribe").send({eventTypes, notificationEndpoint: "http://127.0.0.1:8916/adapter_listener"})).status).toBe(400);
+});
+test.each(["", "not-a-url", "file:///tmp/listener"])("invalid notification URL %p rejected", async notificationEndpoint => {
+  expect((await request(app).post("/api/v1/subscribe").send({eventTypes: ["ProductUpdated"], notificationEndpoint})).status).toBe(400);
+});

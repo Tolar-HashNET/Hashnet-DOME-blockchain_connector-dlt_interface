@@ -1,0 +1,95 @@
+name: Publish public GHCR image
+
+on:
+  push:
+    tags: [ 'mainnet-v2-*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ghcr-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read release identity
+        id: release
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const release = require('./deployment/image-release.json');
+          if (!/^mainnet-v2-[0-9]{8}(?:-[a-z0-9.-]+)?$/.test(release.tag)) {
+            throw new Error('Invalid release tag');
+          }
+          if (process.env.GITHUB_REF_TYPE === 'tag' && process.env.GITHUB_REF_NAME !== release.tag) {
+            throw new Error('Git tag must match deployment/image-release.json');
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `tag=${release.tag}\n`);
+          NODE
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Verify source
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+          npm test
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Authenticate to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Refuse to overwrite an existing release
+        env:
+          IMAGE: ghcr.io/tolar-hashnet/dome-connector-dlt-interface:${{ steps.release.outputs.tag }}
+        run: |
+          if docker buildx imagetools inspect "$IMAGE" > /tmp/existing-image.log 2>&1; then
+            echo "Release already exists: $IMAGE. Choose a new release tag."
+            exit 1
+          fi
+          if ! grep -Eiq 'not found|manifest unknown|name unknown' /tmp/existing-image.log; then
+            cat /tmp/existing-image.log
+            exit 1
+          fi
+
+      - name: Build and push both platforms
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/tolar-hashnet/dome-connector-dlt-interface:${{ steps.release.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/Tolar-HashNET/Hashnet-DOME-blockchain_connector-dlt_interface
+            org.opencontainers.image.version=${{ steps.release.outputs.tag }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Record published identity
+        env:
+          IMAGE: ghcr.io/tolar-hashnet/dome-connector-dlt-interface:${{ steps.release.outputs.tag }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          echo "Image: $IMAGE" >> "$GITHUB_STEP_SUMMARY"
+          echo "Digest: $DIGEST" >> "$GITHUB_STEP_SUMMARY"
+          echo "Platforms: linux/amd64, linux/arm64" >> "$GITHUB_STEP_SUMMARY"
+          echo "Package visibility must be Public; verify an anonymous pull before deploying." >> "$GITHUB_STEP_SUMMARY"

@@ -1,6 +1,7 @@
 {
   "preset": "ts-jest",
   "testEnvironment": "node",
+  "roots": ["<rootDir>/test"],
   "testPathIgnorePatterns" : [
     "src/routes/",
     "src/server.ts"

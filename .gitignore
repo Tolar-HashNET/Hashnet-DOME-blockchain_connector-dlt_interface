@@ -50,9 +50,9 @@ Thumbs.db
 *.mov
 *.wmv
 
-package-lock.json
 privatekey
 coverage
 .scannerwork
 .vscode
 build
+artifacts/

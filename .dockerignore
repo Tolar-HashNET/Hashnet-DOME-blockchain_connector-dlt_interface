@@ -1,5 +1,11 @@
 node_modules/*
 
-packe-lock.json
+.git
+.env
+.env.*
+build/
+coverage/
+test/
+artifacts/
 
 README.md

@@ -1,5 +1,6 @@
 import {RpcPastEvent, StrHexAddress} from "@tolar/web3-plugin-tolar";
 import {AbiParameter, HexString, Web3} from "web3";
+import {toTimestampMilliseconds} from "./funcs";
 
 export interface DomeEvent {
     id: number;
@@ -23,16 +24,13 @@ export function toDomeEvent(rpcPastEvent: RpcPastEvent, web3: Web3, eventDOMEv1A
         rpcPastEvent.data,
         [rpcPastEvent.topicArg0, rpcPastEvent.topicArg1, rpcPastEvent.topicArg2]);
 
-    const eventType = rawParams.eventType as string;
-    const id = Number(rawParams.index as bigint);
-
     return {
         id: Number(rawParams.index as bigint),
-        publisherAddress: rawParams.origin as HexString,
+        publisherAddress: (rawParams.publisherAddress ?? rawParams.origin) as HexString,
         entityIDHash: rawParams.entityIDHash as HexString,
         previousEntityHash: rawParams.previousEntityHash as HexString,
         eventType: rawParams.eventType as string,
-        timestamp: Number(rawParams.timestamp as bigint),
+        timestamp: toTimestampMilliseconds(Number(rawParams.timestamp as bigint)),
         dataLocation: rawParams.dataLocation as string,
         relevantMetadata: rawParams.metadata as string[]
     };

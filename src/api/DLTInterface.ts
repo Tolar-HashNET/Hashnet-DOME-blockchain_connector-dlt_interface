@@ -1,6 +1,6 @@
 import {
   converters,
-  INVALID_NONCE, RpcPastEvent,
+  INVALID_NONCE,
   RpcTxRequest,
   RpcTxResponse,
   TolarPlugin,
@@ -13,11 +13,26 @@ import {DomeEvent, toDomeEvent} from "../utils/types";
 import {HexString, Web3} from "web3";
 import {retryDecorator} from "ts-retry-promise";
 import {DomeContract} from "../utils/funcs";
-import {MAX_BLOCKS_PER_PULL} from "../subscriber/puller";
-import {getHashnetEnv} from "../utils/funcs";
+import {getHashnetEnv, toTimestampMilliseconds} from "../utils/funcs";
 
 const debugLog = debug("DLT Interface Service: ");
 const errorLog = debug("DLT Interface Service:error ");
+
+const publisherQueues = new Map<string, Promise<void>>();
+
+async function serializePublisher<T>(key: string, publish: () => Promise<T>): Promise<T> {
+  const previous = publisherQueues.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>(resolve => {release = resolve;});
+  publisherQueues.set(key, current);
+  await previous;
+  try {
+    return await publish();
+  } finally {
+    release();
+    if (publisherQueues.get(key) === current) publisherQueues.delete(key);
+  }
+}
 
 /**
  * Publish DOME event as a blockchain event.
@@ -72,6 +87,14 @@ export async function publishDOMEEvent(
   if (rpcAddress === "") {
     throw new IllegalArgumentError("The rpc address is null.");
   }
+  for (const [name, value] of Object.entries({iss, entityIDHash, previousEntityHash})) {
+    if (typeof value !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(value)) {
+      throw new IllegalArgumentError(`${name} must be a 32-byte hexadecimal value.`);
+    }
+  }
+  if (!Array.isArray(relevantMetadata) || relevantMetadata.some(item => typeof item !== "string")) {
+    throw new IllegalArgumentError("relevantMetadata must be an array of strings.");
+  }
 
   try {
     debugLog(">>> Publishing event to blockchain node...");
@@ -91,17 +114,14 @@ export async function publishDOMEEvent(
 
     debugLog("  > Ethereum Address of event publisher: ", senderAddress);
 
-    const data = web3.eth.abi.encodeFunctionCall(
-        DomeContract.instance.emitMethodAbi, [
-          iss,
-          entityIDHash,
-          previousEntityHash,
-          eventType,
-          dataLocation,
-          relevantMetadata
-    ]);
+    const method = DomeContract.instance.emitMethodAbi;
+    const argumentsList: unknown[] = [iss, entityIDHash, previousEntityHash, eventType, dataLocation, relevantMetadata];
+    if (method.inputs?.length === 7) {
+      argumentsList.splice(1, 0, converters.toEthAddress(senderAddress));
+    }
+    const data = web3.eth.abi.encodeFunctionCall(method, argumentsList);
 
-    const hashnetEnv = getHashnetEnv();
+    const hashnetEnv = await getHashnetEnv(rpcAddress);
 
     const contractTxRequest: RpcTxRequest = {
       senderAddress: senderAddress,
@@ -118,12 +138,25 @@ export async function publishDOMEEvent(
     debugLog("  > Publishing event to blockchain node...");
 
     const gasEstimate = await web3.tolar.getGasEstimate(contractTxRequest);
+    const block = await web3.eth.getBlock("latest");
+    if (BigInt(gasEstimate) <= BigInt(0) || BigInt(gasEstimate) > block.gasLimit) {
+      throw new Error("Contract gas estimate is outside the block gas limit.");
+    }
+    // V1-compatible estimation returns a number even when the method reverts.
+    // Check execution separately, especially for a wrong ABI or non-owner key.
+    const simulation = await web3.tolar.tryCallTransaction({...contractTxRequest, gas: gasEstimate});
+    if (simulation.excepted) {
+      throw new Error("Contract preflight reverted; verify the contract ABI and publishing account.");
+    }
+    // tol_getNonce reports confirmed state. Serialize through confirmation.
+    return await serializePublisher(`${hashnetEnv.networkId}:${senderAddress.toLowerCase()}`, async () => {
+    contractTxRequest.gasPrice = (await web3.eth.getGasPrice()).toString();
     let nonce = await web3.tolar.getNonce(senderAddress);
     if (nonce === INVALID_NONCE) {
       nonce = "0";
     }
 
-    const txHash = await web3.tolar.sedTransactionWithWallet({
+    const txHash = await web3.tolar.sendTransactionWithWallet({
       from: contractTxRequest.senderAddress,
       to: contractTxRequest.receiverAddress,
       value: contractTxRequest.amount,
@@ -135,7 +168,14 @@ export async function publishDOMEEvent(
     });
 
     const retryGetTx = retryDecorator(
-        (txHash: string) => web3.tolar.getTransaction(txHash),
+        async (txHash: string) => {
+          const transaction = await web3.tolar.getTransaction(txHash);
+          if (typeof transaction.excepted !== "boolean" ||
+              !Number.isFinite(transaction.confirmationTimestamp.getTime())) {
+            throw new Error("Transaction is not confirmed yet");
+          }
+          return transaction;
+        },
         { timeout: 30_000, delay: 2000 },
     );
 
@@ -146,7 +186,8 @@ export async function publishDOMEEvent(
     }
 
     debugLog("  > Transaction executed:\n" + JSON.stringify(emitEventResult));
-    return emitEventResult.confirmationTimestamp;
+    return new Date(toTimestampMilliseconds(emitEventResult.confirmationTimestamp.getTime()));
+    });
   } catch (error) {
     errorLog(" > !! Error in publishDOMEEvent");
     throw error;
@@ -159,7 +200,7 @@ export async function publishDOMEEvent(
  * @param endDateMs the given end date in miliseconds
  * @param endDateMs
  * @param rpcAddress
- * @returns a JSON with all the DOME active events from the blockchain between the given dates with its timestamp truncated to seconds, not to miliseconds
+ * @returns active DOME events with timestamps in Unix milliseconds
  */
 export async function getActiveDOMEEventsByDate(
     startDateMs: number,
@@ -169,6 +210,14 @@ export async function getActiveDOMEEventsByDate(
   if(rpcAddress === ""){
     throw new IllegalArgumentError("The rpc address is blank.");
   }
+  for (const value of [startDateMs, endDateMs]) {
+    if (value === undefined || value === null || String(value).trim() === "" ||
+        !Number.isSafeInteger(Number(value)) || Number(value) < 0) {
+      throw new IllegalArgumentError("Dates must be non-negative Unix milliseconds.");
+    }
+  }
+  startDateMs = Number(startDateMs);
+  endDateMs = Number(endDateMs);
   if(startDateMs > endDateMs){
     throw new IllegalArgumentError("The end date can't be lower than the start date.");
   }
@@ -185,24 +234,16 @@ export async function getActiveDOMEEventsByDate(
   const topic0 = web3.eth.abi.encodeEventSignature(eventDOMEv1Abi);
   const contractAddress = process.env.DOME_EVENTS_CONTRACT_ADDRESS!;
 
-  const blockCount = await web3.tolar.getBlockCount();
-  const allPastEvents: RpcPastEvent[] = [];
-
-  let fromIdx = web3.utils.toNumber(process.env.DOME_PRODUCTION_BLOCK_NUMBER!) as number;
-  while (fromIdx <= blockCount) {
-    const toIdx = fromIdx + Math.min(MAX_BLOCKS_PER_PULL - 1, blockCount - fromIdx);
-
-    const pastEvents = await web3.tolar.getPastEventsByBlockRange(
-        contractAddress,
-        topic0,
-        fromIdx,
-        toIdx);
-    allPastEvents.push(...pastEvents);
-
-    fromIdx = toIdx + 1;
+  // Query contract/topic-filtered events in one request. Mainnet retains millions
+  // of mostly empty V1 blocks; walking every 1000-block page times out.
+  const allPastEvents = await web3.tolar.getPastEvents(contractAddress, topic0);
+  const productionBlock = Number(process.env.DOME_PRODUCTION_BLOCK_NUMBER);
+  if (!Number.isSafeInteger(productionBlock) || productionBlock < 0) {
+    throw new IllegalArgumentError("DOME_PRODUCTION_BLOCK_NUMBER is invalid.");
   }
 
   const domeEvents = allPastEvents
+      .filter(event => event.blockIndex >= productionBlock)
       .map(rpcPastEvent => toDomeEvent(rpcPastEvent, web3, eventDOMEv1Abi.inputs!))
       .filter(domeEvent => domeEvent.timestamp >= startDateMs && domeEvent.timestamp <= endDateMs)
 

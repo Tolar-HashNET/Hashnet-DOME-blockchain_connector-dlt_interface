@@ -1,10 +1,13 @@
-FROM node:lts-iron
+FROM node:22-bookworm-slim
 ENV NODE_ENV=production
 WORKDIR /usr/src/app
-COPY . .
-RUN apt-get update && apt-get -y upgrade
-RUN npm install && npm install typescript@4.7.4 -g && npm install ts-node@10.8.1 -g
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts --no-audit --no-fund
+COPY tsconfig.json ./
+COPY src ./src
+COPY scripts ./scripts
+RUN npm run build
 EXPOSE 8080
 RUN chown -R node /usr/src/app
 USER node
-CMD ["ts-node", "src/server.ts"]
+CMD ["node", "build/src/server.js"]

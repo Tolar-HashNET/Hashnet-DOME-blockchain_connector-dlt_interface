@@ -50,7 +50,7 @@ class Notifier {
                     continue;
                 }
 
-                if (event.publisherAddress !== filter.ownIss) {
+                if (event.publisherAddress.toLowerCase() !== filter.ownIss.toLowerCase()) {
                     continue;
                 }
 

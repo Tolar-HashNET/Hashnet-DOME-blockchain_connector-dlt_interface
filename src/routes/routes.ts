@@ -36,9 +36,9 @@ router.post("/api/v1/publishEvent", async (req: any, resp: any) => {
     );
     resp.status(201).json(eventTimestamp);
   } catch (error: any) {
-    if (error == IllegalArgumentError) {
+    if (error instanceof IllegalArgumentError) {
       errorLog("Error:\n ", error);
-      resp.status(400).send(error.message);
+      return resp.status(400).send(error.message);
     }
 
     errorLog("Error:\n ", error);
@@ -50,7 +50,7 @@ router.post("/api/v1/subscribe", async (req: any, resp: any) => {
   debugLog("Entry call from origin: ", req.headers.origin);
   try {
     const eventTypes = req.body.eventTypes;
-    if (eventTypes === undefined || eventTypes === null) {
+    if (!Array.isArray(eventTypes)) {
       throw new IllegalArgumentError("The eventType is null.");
     }
 
@@ -58,22 +58,23 @@ router.post("/api/v1/subscribe", async (req: any, resp: any) => {
       throw new IllegalArgumentError("No eventTypes indicated for subscription.");
     }
 
-    if (eventTypes.includes("")) {
+    if (eventTypes.some(eventType => typeof eventType !== "string" || eventType.trim() === "")) {
       throw new IllegalArgumentError("Blank eventTypes indicated for subscription.");
     }
 
     const notificationEndpoint = req.body.notificationEndpoint;
-    if (notificationEndpoint === undefined || notificationEndpoint === null || notificationEndpoint === "") {
+    if (typeof notificationEndpoint !== "string" || !/^https?:\/\//i.test(notificationEndpoint)) {
       throw new IllegalArgumentError("Blank eventTypes indicated for subscription.");
     }
+    try {new URL(notificationEndpoint);} catch {throw new IllegalArgumentError("Invalid notification endpoint.");}
 
     notifier.add(notificationEndpoint, {eventTypes: eventTypes, ownIss: process.env.ISS!});
 
     resp.status(201).send("OK");
   } catch (error: any) {
-    if (error == NotificationEndpointError) {
+    if (error instanceof NotificationEndpointError || error instanceof IllegalArgumentError) {
       errorLog("Error:\n ", error);
-      resp.status(400).send(error.message);
+      return resp.status(400).send(error.message);
     }
 
     debugLog("Error:\n ", error);
@@ -87,9 +88,9 @@ router.get('/api/v1/events', async (req: any, resp: any) => {
     let activeEvents = await getActiveDOMEEventsByDate(req.query.startDate, req.query.endDate, process.env.RPC_ADDRESS!);
     resp.status(200).json(activeEvents);
   } catch (error: any) {
-    if (error == IllegalArgumentError) {
+    if (error instanceof IllegalArgumentError) {
       errorLog("Error:\n ", error);
-      resp.status(400).send(error.message);
+      return resp.status(400).send(error.message);
     }
     debugLog("Error:\n ", error);
     resp.status(400).send("Error connecting to the blockchain.");

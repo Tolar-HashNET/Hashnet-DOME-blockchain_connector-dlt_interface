@@ -1,0 +1,15 @@
+{
+  "format": "tolar-v2-network-v1",
+  "chain_id": 1,
+  "forks": [{"revision": "osaka", "block": 0}],
+  "blob_schedule": [{"block": 0, "target": 14, "maximum": 21, "base_fee_update_fraction": 11684671}],
+  "block_gas_limit": 30000000,
+  "maximum_transaction_bytes_per_block": 10485760,
+  "checkpoint_interval_seconds": 1,
+  "initial_base_fee": "1000000000",
+  "fee_recipient": "0xa05ea6c81c5d2ca0bf0581974d7c7d393998d4fe",
+  "allow_unprotected_ethereum_transactions": false,
+  "allow_experimental_evm": false,
+  "network_update_sender_public_keys": [],
+  "validators": []
+}

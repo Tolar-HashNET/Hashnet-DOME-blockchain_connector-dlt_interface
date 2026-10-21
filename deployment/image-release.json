@@ -1,0 +1,28 @@
+{
+  "preparedOn": "2026-10-21",
+  "tag": "mainnet-v2-20261021",
+  "localImage": "dome-connector-dlt-interface:mainnet-v2-20261021",
+  "proposedImage": "ghcr.io/tolar-hashnet/dome-connector-dlt-interface:mainnet-v2-20261021",
+  "platforms": ["linux/amd64", "linux/arm64"],
+  "manifestDigest": "sha256:aae1cf007a54564347910f40d4cf3e0e256e2abe293e7eb061db5259aaac77ee",
+  "archive": "artifacts/dome-connector-dlt-interface-mainnet-v2-20261021.tar.gz",
+  "archiveSha256": "674ed0b4b24623a4cb8d3f6fa58a6c44985512869771a45d96723173a30310ff",
+  "source": {
+    "repository": "https://github.com/Tolar-HashNET/Hashnet-DOME-blockchain_connector-dlt_interface",
+    "baseCommit": "c9d9a95",
+    "branch": "codex/mainnet-v2-compatibility",
+    "uncommittedChanges": true,
+    "contextSha256": "5e4cae7c0859d1fb88c1264535eea8a116f42a66afacc8684caa302e5d2d8520",
+    "contextFiles": 15
+  },
+  "verification": {
+    "linux/amd64": {"nodeArchitecture": "x64", "healthStatus": 200, "eventsStatus": 200, "contractSimulation": "passed"},
+    "linux/arm64": {"nodeArchitecture": "arm64", "healthStatus": 200, "eventsStatus": 200, "contractSimulation": "passed"},
+    "memoryLimit": "384m",
+    "cpuLimit": 0.5,
+    "mainnetTransactionSubmitted": false,
+    "bakedInDotEnvFile": false
+  },
+  "uploaded": false,
+  "deployed": false
+}

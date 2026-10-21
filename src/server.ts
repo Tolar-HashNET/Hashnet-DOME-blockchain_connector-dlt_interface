@@ -7,9 +7,10 @@ import {EventPuller} from "./subscriber/puller";
 import notifier from "./subscriber/notifier";
 import {DomeContract} from "./utils/funcs";
 import express from "express";
+import {Server} from "http";
 import morgan from "morgan";
-import {validator as tolarValidator} from "@tolar/web3-plugin-tolar";
-import { validator } from "web3";
+import {TolarPlugin, validator as tolarValidator} from "@tolar/web3-plugin-tolar";
+import {validator, Web3} from "web3";
 
 dotenv.config();
 
@@ -41,7 +42,6 @@ if (process.env.PRIVATE_KEY === undefined || !validator.isHexString(process.env.
 }
 
 const app = express()
-const port = 8080
 
 // Disable expressjs version in headers.
 app.disable("x-powered-by");
@@ -92,35 +92,53 @@ app.use((req: any, res: any, next: any) => {
     return res.status(404).json({ message: error.message });
 });
 
-app.listen(port, () => {
-    console.log(`DLT Interface API listening at http://localhost:${port}`)
-});
-
-const eventPuller = new EventPuller(
-    process.env.RPC_ADDRESS!,
-    process.env.DOME_EVENTS_CONTRACT_ADDRESS!,
-    DomeContract.instance.eventDOMEv1Abi,
-    1
-);
-
-const notificationTask = new AsyncTask(
-    'Notification Task',
-    async () => {
-        if(notifier.subscriber_count() === 0) {
-            return;
-        }
-        const events = await eventPuller.pull();
-        if(events === undefined || events.length === 0) {
-            return;
-        }
-
-        await notifier.notify(events);
-    },
-    (err: Error) => { console.log(err); }
-);
-
 const scheduler = new ToadScheduler();
-scheduler.addSimpleIntervalJob(new SimpleIntervalJob({ seconds: 5, }, notificationTask));
 
-module.exports = {app, scheduler}
+async function startServer(port = Number(process.env.PORT ?? 8080)): Promise<Server> {
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+        throw new IllegalArgumentError("PORT must be an integer between 0 and 65535");
+    }
+
+    const web3 = new Web3(process.env.RPC_ADDRESS!);
+    web3.registerPlugin(new TolarPlugin());
+    // Capture the live tail before accepting subscriptions or publishes.
+    const head = await web3.tolar.getBlockCount();
+    const productionBlock = Number(process.env.DOME_PRODUCTION_BLOCK_NUMBER);
+    if (!Number.isSafeInteger(head) || head < 0 || !Number.isSafeInteger(productionBlock)) {
+        throw new IllegalArgumentError("Invalid notification start block");
+    }
+    const eventPuller = new EventPuller(
+        process.env.RPC_ADDRESS!,
+        process.env.DOME_EVENTS_CONTRACT_ADDRESS!,
+        DomeContract.instance.eventDOMEv1Abi,
+        Math.max(productionBlock, head + 1)
+    );
+    const notificationTask = new AsyncTask(
+        'Notification Task',
+        async () => {
+            if (notifier.subscriber_count() === 0) return;
+            const events = await eventPuller.pull();
+            if (events.length !== 0) await notifier.notify(events);
+        },
+        (err: Error) => { console.log(err); }
+    );
+
+    const server = await new Promise<Server>((resolve, reject) => {
+        const listener = app.listen(port, () => resolve(listener));
+        listener.once("error", reject);
+    });
+    server.once("close", () => scheduler.removeById("notifications"));
+    scheduler.addSimpleIntervalJob(new SimpleIntervalJob({seconds: 5}, notificationTask, {id: "notifications"}));
+    console.log(`DLT Interface API listening on port ${(server.address() as {port: number}).port}`);
+    return server;
+}
+
+module.exports = {app, scheduler, startServer};
+
+if (require.main === module) {
+    startServer().catch(error => {
+        console.error(error);
+        process.exitCode = 1;
+    });
+}
 

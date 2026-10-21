@@ -1,0 +1,40 @@
+# Apply after the existing access-node values. GHCR is proposed, not published yet.
+# Publish the prepared image to the selected registry before applying this overlay.
+access-node:
+  desmos:
+    app:
+      dltAdapter:
+        # Desmos v2.0.3 uses this REST adapter provider name for HashNET too.
+        provider: digitelts
+        internalDomain: http://dlt-adapter-hashnet:8080
+        externalDomain: http://dlt-adapter-hashnet:8080
+
+dlt-adapter-hashnet:
+  enabled: true
+  fullnameOverride: dlt-adapter-hashnet
+  image:
+    repository: ghcr.io/tolar-hashnet/dome-connector-dlt-interface
+    tag: mainnet-v2-20261021
+    pullPolicy: Always
+  existingSecret:
+    enabled: true
+    name: access-node-secret
+    key: dlt-private-key
+  env:
+    # Clear the redundant inline value when Helm merges the original values.
+    PRIVATE_KEY: null
+    RPC_ADDRESS: https://jsongw.mainnet.tolar.io/jsonrpc
+    DOME_EVENTS_CONTRACT_ADDRESS: "0x544b1194f23bd9dd4f9f1a4d0e24a2ec86bbe3ca5ae079c9a6"
+    ISS: "0x43b27fef24cfe8a0b797ed8a36de2884f9963c0c2a0da640e3ec7ad6cd0c493d"
+    DOME_PRODUCTION_BLOCK_NUMBER: "0"
+    # The deployed mainnet contract has no authorAddress event/function argument.
+    DOME_EVENTS_CONTRACT_ABI: >-
+      [
+        {"anonymous":false,"inputs":[{"indexed":false,"internalType":"uint256","name":"index","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"timestamp","type":"uint256"},{"indexed":true,"internalType":"bytes32","name":"publisherAddress","type":"bytes32"},{"indexed":true,"internalType":"bytes32","name":"entityIDHash","type":"bytes32"},{"indexed":true,"internalType":"bytes32","name":"previousEntityHash","type":"bytes32"},{"indexed":false,"internalType":"string","name":"eventType","type":"string"},{"indexed":false,"internalType":"string","name":"dataLocation","type":"string"},{"indexed":false,"internalType":"string[]","name":"metadata","type":"string[]"}],"name":"EventDOMEv1","type":"event"},
+        {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"previousOwner","type":"address"},{"indexed":true,"internalType":"address","name":"newOwner","type":"address"}],"name":"OwnershipTransferred","type":"event"},
+        {"inputs":[{"internalType":"bytes32","name":"_publisherAddress","type":"bytes32"},{"internalType":"bytes32","name":"_entityIDHash","type":"bytes32"},{"internalType":"bytes32","name":"_previousEntityHash","type":"bytes32"},{"internalType":"string","name":"_eventType","type":"string"},{"internalType":"string","name":"_dataLocation","type":"string"},{"internalType":"string[]","name":"_metadata","type":"string[]"}],"name":"emitNewEvent","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"},
+        {"inputs":[],"name":"index","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+        {"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
+        {"inputs":[],"name":"renounceOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"},
+        {"inputs":[{"internalType":"address","name":"newOwner","type":"address"}],"name":"transferOwnership","outputs":[],"stateMutability":"nonpayable","type":"function"}
+      ]

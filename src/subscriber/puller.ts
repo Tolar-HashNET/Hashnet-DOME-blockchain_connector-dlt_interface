@@ -1,6 +1,6 @@
 import {StrHexAddress, StrHexHash, TolarPlugin} from "@tolar/web3-plugin-tolar";
 import {type AbiEventFragment, Web3} from "web3";
-import {toDomeEvent} from "../utils/types";
+import {DomeEvent, toDomeEvent} from "../utils/types";
 
 
 export const MAX_BLOCKS_PER_PULL = 1000;
@@ -27,15 +27,14 @@ export class EventPuller {
         this._fromBlockIdx = fromBlockIdx;
     }
 
-    public async pull() {
+    public async pull(): Promise<DomeEvent[]> {
+        // The legacy RPC returns the highest visible block index, including V1 history.
         const blockCount = await this._web3.tolar.getBlockCount();
         if (this._fromBlockIdx > blockCount) {
-            return;
+            return [];
         }
 
-        const toBlockIndex = blockCount - this._fromBlockIdx > MAX_BLOCKS_PER_PULL ?
-            this._fromBlockIdx + MAX_BLOCKS_PER_PULL :
-            blockCount;
+        const toBlockIndex = Math.min(this._fromBlockIdx + MAX_BLOCKS_PER_PULL - 1, blockCount);
 
         const rpcPastEvent = await this._web3.tolar.getPastEventsByBlockRange(
             this._contractAddress,
@@ -43,15 +42,12 @@ export class EventPuller {
             this._fromBlockIdx,
             toBlockIndex);
 
-        this._fromBlockIdx = toBlockIndex + 1;
-
-        if(rpcPastEvent === undefined || rpcPastEvent === null || rpcPastEvent.length === 0) {
-            return [];
-        }
-
-        return rpcPastEvent.map((rpcEvent) => {
+        const events = (rpcPastEvent ?? []).map((rpcEvent) => {
             return toDomeEvent(rpcEvent, this._web3, this._eventDOMEv1Abi.inputs!);
         });
+
+        this._fromBlockIdx = toBlockIndex + 1;
+        return events;
     }
 
     get fromBlockIdx(): number {

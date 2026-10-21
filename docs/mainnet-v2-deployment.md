@@ -2,7 +2,7 @@
 
 Apply `deployment/mainnet-v2.values.yaml` after the supplied access-node values. It targets the supplied wrapper dependencies: `access-node` 1.2.7 and the alias `dlt-adapter-hashnet` of Alastria `dlt-adapter` 8.0.0.
 
-AWS ECR is retired. The replacement `ghcr.io/tolar-hashnet/dome-connector-dlt-interface:mainnet-v2-20261021` was uploaded on 2026-10-22. Its index digest is `sha256:45767a62a079c07b0733c8dd46b8ab9e9eaec9c83586ccc2876f8be0d131b377`. It is still private because the organization disables public packages. Public visibility and anonymous pulls must be enabled and verified before deploying these values without registry credentials. No live deployment has been changed. See [release details and registry instructions](image-registry-options.md).
+AWS ECR is retired. The replacement `ghcr.io/tolar-hashnet/dome-connector-dlt-interface:mainnet-v2-20261021` was uploaded and made public on 2026-10-22. Its index digest is `sha256:45767a62a079c07b0733c8dd46b8ab9e9eaec9c83586ccc2876f8be0d131b377`. Public registry access is verified; these values do not need registry credentials. No live deployment has been changed. See [release details and registry instructions](image-registry-options.md).
 
 The replacement image is built for Linux/AMD64 and Linux/ARM64. Keep both platform variants when loading and publishing the release; Docker's containerd image store supports this.
 
@@ -69,4 +69,8 @@ Build those C/C++ binaries and any source dependencies with upstream Clang 22.x.
 
 The source fixes and GHCR publishing workflow were committed and pushed on `codex/mainnet-v2-compatibility`; the release tag `mainnet-v2-20261021` points at source commit `7cab3747e7edd591d43ca51fc6a179a5c7805e99`. The [GHCR workflow](https://github.com/Tolar-HashNET/Hashnet-DOME-blockchain_connector-dlt_interface/actions/runs/39688918764) published both platforms successfully. All 39 tests passed again locally, and the updated supplied values and overlay both passed Helm rendering checks against the original chart versions.
 
-The image currently remains private because the organization-wide package policy disables public visibility. Changing that wider policy requires approval; no organization setting was changed. No Kubernetes deployment or mainnet transaction was performed. Deployment still requires verified public image access, applying the values through the existing release process, and checking the effective Secret's owner address and balance. A live adapter URL was not available for testing the existing deployment itself.
+Following explicit approval, public package creation was enabled for the Tolar-HashNET organization and left enabled. Only this package's visibility was changed to Public; other package visibility, private-package creation and inherited access settings were left unchanged. Anonymous registry access confirms both platforms and the recorded digest.
+
+Both published architectures were then pulled without credentials and started at 384 MiB/0.5 CPU. `/health` and `/api/v1/events` returned HTTP 200, and `verify:chain -- --contract-only` passed against mainnet (chain ID 1, gas price 1, estimated publishing gas 60,137). Neither image contains a baked-in `.env`. Smoke containers were removed after verification.
+
+No Kubernetes deployment or mainnet transaction was performed. Deployment still requires applying the values through the existing release process and checking the effective Secret's owner address and balance. A live adapter URL was not available for testing the existing deployment itself.

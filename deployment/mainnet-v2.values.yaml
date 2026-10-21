@@ -1,5 +1,5 @@
-# Apply after the existing access-node values. The image is uploaded to GHCR.
-# Public visibility is blocked by organization policy; enable and verify it before deployment.
+# Apply after the existing access-node values. The GHCR image is public.
+# Both platforms support anonymous pulls; no registry pull Secret is required.
 access-node:
   desmos:
     app:

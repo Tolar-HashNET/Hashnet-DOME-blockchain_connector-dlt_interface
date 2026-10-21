@@ -19,9 +19,10 @@
     "contextFiles": 15
   },
   "verification": {
-    "verifiedImage": "dome-connector-dlt-interface:mainnet-v2-20261021",
-    "linux/amd64": {"nodeArchitecture": "x64", "healthStatus": 200, "eventsStatus": 200, "contractSimulation": "passed"},
-    "linux/arm64": {"nodeArchitecture": "arm64", "healthStatus": 200, "eventsStatus": 200, "contractSimulation": "passed"},
+    "verifiedImage": "ghcr.io/tolar-hashnet/dome-connector-dlt-interface:mainnet-v2-20261021",
+    "verifiedOn": "2026-10-22",
+    "linux/amd64": {"nodeArchitecture": "x64", "anonymousPull": true, "healthStatus": 200, "eventsStatus": 200, "contractSimulation": "passed"},
+    "linux/arm64": {"nodeArchitecture": "arm64", "anonymousPull": true, "healthStatus": 200, "eventsStatus": 200, "contractSimulation": "passed"},
     "memoryLimit": "384m",
     "cpuLimit": 0.5,
     "mainnetTransactionSubmitted": false,
@@ -30,8 +31,9 @@
   "uploaded": true,
   "uploadedOn": "2026-10-22",
   "publishRun": "https://github.com/Tolar-HashNET/Hashnet-DOME-blockchain_connector-dlt_interface/actions/runs/39688918764",
-  "visibility": "private",
-  "publicPullVerified": false,
-  "publicAccessBlocker": "Tolar-HashNET organization policy disables public packages; approval required before changing the organization-wide setting.",
+  "visibility": "public",
+  "publicOn": "2026-10-22",
+  "publicPullVerified": true,
+  "organizationPublicPackageCreation": {"enabled": true, "restoreAfterPublication": false},
   "deployed": false
 }

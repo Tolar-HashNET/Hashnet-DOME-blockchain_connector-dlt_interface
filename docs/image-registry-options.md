@@ -4,7 +4,7 @@ Prepared release tag: `mainnet-v2-20261021`.
 Local image: `dome-connector-dlt-interface:mainnet-v2-20261021`.
 Platforms: `linux/amd64` and `linux/arm64`.
 
-This packages the mainnet compatibility fixes and no longer depends on the retired AWS registry. The GHCR release was uploaded successfully on 2026-10-22, but is currently private: Tolar-HashNET's organization policy disables public packages. Do not deploy the anonymous-pull values until public access has been enabled and verified.
+This packages the mainnet compatibility fixes and no longer depends on the retired AWS registry. The GHCR release was uploaded and made public on 2026-10-22. Public package creation is enabled for Tolar-HashNET and remains enabled at the owner's request. No other existing package visibility was changed.
 
 ## Selected: GitHub Container Registry
 
@@ -22,7 +22,7 @@ docker tag dome-connector-dlt-interface:mainnet-v2-20261021 ghcr.io/tolar-hashne
 docker push ghcr.io/tolar-hashnet/dome-connector-dlt-interface:mainnet-v2-20261021
 ```
 
-For the public option, set the new package's visibility to Public after the first push and verify an unauthenticated pull. Do not assume that a public source repository automatically makes a newly pushed package public.
+This release's package visibility is Public. For future new packages, explicitly set visibility after the first push and verify an unauthenticated pull. Enabling public package creation for the organization does not automatically make newly pushed packages public.
 
 Update this exact subtree in the supplied wrapper's `values.yaml`:
 
@@ -102,6 +102,8 @@ an existing release tag. Package visibility is set separately in GitHub's
 package settings; the workflow cannot assume that it is public.
 
 Release identity and source-context checksum are recorded in `deployment/image-release.json`. Both locally prepared variants were started at 384 MiB and 0.5 CPU: health and event retrieval returned HTTP 200, and read-only simulation of publishing against the current mainnet contract passed. No `.env` file is baked into either image. The local archive represents the prepared local build; GHCR was rebuilt by CI from the same source context with an additional revision label, so its manifest digest differs. The archive remains local and is not in Git.
+
+After publication, both GHCR platforms were pulled with an empty Docker credential configuration and smoke-tested again at the same limits. Health and event retrieval returned HTTP 200, and read-only mainnet contract simulation passed on chain ID 1 at gas price 1. The published images contain no `.env` file. No mainnet transaction was submitted.
 
 ## Update the existing deployment
 

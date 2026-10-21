@@ -2,20 +2,24 @@
   "preparedOn": "2026-10-21",
   "tag": "mainnet-v2-20261021",
   "localImage": "dome-connector-dlt-interface:mainnet-v2-20261021",
-  "proposedImage": "ghcr.io/tolar-hashnet/dome-connector-dlt-interface:mainnet-v2-20261021",
+  "image": "ghcr.io/tolar-hashnet/dome-connector-dlt-interface:mainnet-v2-20261021",
   "platforms": ["linux/amd64", "linux/arm64"],
-  "manifestDigest": "sha256:aae1cf007a54564347910f40d4cf3e0e256e2abe293e7eb061db5259aaac77ee",
+  "manifestDigest": "sha256:45767a62a079c07b0733c8dd46b8ab9e9eaec9c83586ccc2876f8be0d131b377",
+  "archiveManifestDigest": "sha256:aae1cf007a54564347910f40d4cf3e0e256e2abe293e7eb061db5259aaac77ee",
   "archive": "artifacts/dome-connector-dlt-interface-mainnet-v2-20261021.tar.gz",
   "archiveSha256": "674ed0b4b24623a4cb8d3f6fa58a6c44985512869771a45d96723173a30310ff",
   "source": {
     "repository": "https://github.com/Tolar-HashNET/Hashnet-DOME-blockchain_connector-dlt_interface",
     "baseCommit": "c9d9a95",
     "branch": "codex/mainnet-v2-compatibility",
-    "uncommittedChanges": true,
+    "commit": "7cab3747e7edd591d43ca51fc6a179a5c7805e99",
+    "uncommittedChanges": false,
+    "archivePreparedFromUncommittedChanges": true,
     "contextSha256": "5e4cae7c0859d1fb88c1264535eea8a116f42a66afacc8684caa302e5d2d8520",
     "contextFiles": 15
   },
   "verification": {
+    "verifiedImage": "dome-connector-dlt-interface:mainnet-v2-20261021",
     "linux/amd64": {"nodeArchitecture": "x64", "healthStatus": 200, "eventsStatus": 200, "contractSimulation": "passed"},
     "linux/arm64": {"nodeArchitecture": "arm64", "healthStatus": 200, "eventsStatus": 200, "contractSimulation": "passed"},
     "memoryLimit": "384m",
@@ -23,6 +27,11 @@
     "mainnetTransactionSubmitted": false,
     "bakedInDotEnvFile": false
   },
-  "uploaded": false,
+  "uploaded": true,
+  "uploadedOn": "2026-10-22",
+  "publishRun": "https://github.com/Tolar-HashNET/Hashnet-DOME-blockchain_connector-dlt_interface/actions/runs/39688918764",
+  "visibility": "private",
+  "publicPullVerified": false,
+  "publicAccessBlocker": "Tolar-HashNET organization policy disables public packages; approval required before changing the organization-wide setting.",
   "deployed": false
 }

@@ -1,5 +1,5 @@
-# Apply after the existing access-node values. GHCR is proposed, not published yet.
-# Publish the prepared image to the selected registry before applying this overlay.
+# Apply after the existing access-node values. The image is uploaded to GHCR.
+# Public visibility is blocked by organization policy; enable and verify it before deployment.
 access-node:
   desmos:
     app:

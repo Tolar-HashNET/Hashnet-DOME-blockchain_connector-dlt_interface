@@ -4,11 +4,13 @@ Prepared release tag: `mainnet-v2-20261021`.
 Local image: `dome-connector-dlt-interface:mainnet-v2-20261021`.
 Platforms: `linux/amd64` and `linux/arm64`.
 
-This packages the mainnet compatibility fixes. It does not depend on the retired AWS registry. The proposed registry name in the Helm overlay is not an assertion that the package already exists: no image has been uploaded.
+This packages the mainnet compatibility fixes and no longer depends on the retired AWS registry. The GHCR release was uploaded successfully on 2026-10-22, but is currently private: Tolar-HashNET's organization policy disables public packages. Do not deploy the anonymous-pull values until public access has been enabled and verified.
 
-## Recommended: GitHub Container Registry
+## Selected: GitHub Container Registry
 
-Proposed image: `ghcr.io/tolar-hashnet/dome-connector-dlt-interface:mainnet-v2-20261021`.
+Uploaded image: `ghcr.io/tolar-hashnet/dome-connector-dlt-interface:mainnet-v2-20261021`.
+
+Published index digest: `sha256:45767a62a079c07b0733c8dd46b8ab9e9eaec9c83586ccc2876f8be0d131b377`. Both Linux platforms were built from commit `7cab3747e7edd591d43ca51fc6a179a5c7805e99` in the [successful publishing run](https://github.com/Tolar-HashNET/Hashnet-DOME-blockchain_connector-dlt_interface/actions/runs/39688918764). The workflow passed 37 tests; the two real-validator tests require local Clang-22-built V2 binaries and also passed locally (39 tests total).
 
 This keeps the image beside the existing GitHub organization and source repository. Public GHCR images support anonymous pulls, so a public package needs no Kubernetes registry credentials. Publishing requires permission in the organization; manual Docker authentication uses a personal access token (classic) with `write:packages`, and SSO authorization if required. See [GitHub's registry documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
 
@@ -32,7 +34,7 @@ dlt-adapter-hashnet:
     pullPolicy: Always
 ```
 
-`deployment/mainnet-v2.values.yaml` already proposes this setting and also contains the ABI and Desmos corrections. Apply it after the original private values. Do not replace the full private values file with this small example.
+`deployment/mainnet-v2.values.yaml` contains this setting plus the ABI and Desmos corrections. The supplied local `values.yaml` was updated with the same public configuration, preserving all other values and secrets; its pre-change backup stays outside Git. Apply the overlay after the original private values if using that deployment method. Do not replace the full private values file with this small example.
 
 ## Alternative: Docker Hub
 
@@ -99,7 +101,7 @@ both platforms with source/version/revision labels. It refuses to overwrite
 an existing release tag. Package visibility is set separately in GitHub's
 package settings; the workflow cannot assume that it is public.
 
-Release identity and source-context checksum are recorded in `deployment/image-release.json`. Both variants were started at 384 MiB and 0.5 CPU: health and event retrieval returned HTTP 200, and read-only simulation of publishing against the current mainnet contract passed. No `.env` file is baked into either image. The source fixes remain uncommitted in the local checkout, and the archive has not been uploaded.
+Release identity and source-context checksum are recorded in `deployment/image-release.json`. Both locally prepared variants were started at 384 MiB and 0.5 CPU: health and event retrieval returned HTTP 200, and read-only simulation of publishing against the current mainnet contract passed. No `.env` file is baked into either image. The local archive represents the prepared local build; GHCR was rebuilt by CI from the same source context with an additional revision label, so its manifest digest differs. The archive remains local and is not in Git.
 
 ## Update the existing deployment
 
